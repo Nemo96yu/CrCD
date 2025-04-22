@@ -137,25 +137,7 @@ def main_worker(gpu, ngpus_per_node, args):
     optimizer2 = torch.optim.SGD(model2.parameters(), args.lr,
                                  momentum=args.momentum,
                                  weight_decay=args.weight_decay)
-    # optionally resume from a checkpoint
-    if args.resume:
-        if os.path.isfile(args.resume):
-            print("=> loading checkpoint '{}'".format(args.resume))
-            if args.gpu is None:
-                checkpoint = torch.load(args.resume)
-            else:
-                # Map model to be loaded to specified single gpu.
-                loc = 'cuda:{}'.format(args.gpu)
-                checkpoint = torch.load(args.resume, map_location=loc)
-            args.start_epoch = checkpoint['epoch']
-            model1.load_state_dict(checkpoint['state_dict1'])
-            optimizer1.load_state_dict(checkpoint['optimizer1'])
-            model2.load_state_dict(checkpoint['state_dict2'])
-            optimizer2.load_state_dict(checkpoint['optimizer2'])
-            print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(args.resume, checkpoint['epoch']))
-        else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+
     # load_data
     train_loader, partialY, train_sampler, test_loader = HSIdataloader.load_Indian(partial_rate=args.partial_rate, batch_size=args.batch_size)
     # this train loader is the partial label training loader
@@ -182,28 +164,16 @@ def main_worker(gpu, ngpus_per_node, args):
         train(train_loader, model1, model2, loss_fn, loss_stru, loss_sem, loss_cont_fn, optimizer1, optimizer2, epoch, args, logger, start_upd_prot)
         loss_fn.set_conf_ema_m(epoch, args)
 
-        acc_test, y_pred_test, y_test= test(model1, model2, test_loader, args, epoch, logger)
-        pa, ua = paua(y_pred_test, y_test)
-        mmc = loss_fn.confidence1.max(dim=1)[0].mean()
-        
-        with open(os.path.join(args.exp_dir, 'result.log'), 'a+') as f:
-            f.write('Epoch {}: Acc {}, Best Acc {}. (lr {}, MMC {})\n'.format(epoch
-                , acc_test, best_acc, optimizer1.param_groups[0]['lr'], mmc))
-        if acc_test > best_acc:
-            best_acc = acc_test
-            is_best = True
-
-        if not args.multiprocessing_distributed or (args.multiprocessing_distributed
-                and args.rank % ngpus_per_node == 0):
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'arch': args.arch,
-                'state_dict1': model1.state_dict(),
-                'optimizer1': optimizer1.state_dict(),
-                'state_dict2': model2.state_dict(),
-                'optimizer2': optimizer2.state_dict(),
-            }, is_best=is_best, filename='{}/checkpoint.pth.tar'.format(args.exp_dir),
-            best_file_name='{}/checkpoint_best.pth.tar'.format(args.exp_dir))
+    acc_test, y_pred_test, y_test = test(model1, model2, test_loader, args, epoch, logger)
+    pa, ka = paua(y_pred_test, y_test)
+    file_name = "classification_report.txt"
+    with open(file_name, 'w') as x_file:
+        x_file.write('{} Kappa accuracy (%)'.format(ka))
+        x_file.write('\n')
+        x_file.write('{} Overall accuracy (%)'.format(acc_test))
+        x_file.write('\n')
+        x_file.write('{} Each accuracy (%)'.format(pa))
+        x_file.write('\n')
 
 def paua(predicted, gt):
     # 计算每个类别的像素总数
